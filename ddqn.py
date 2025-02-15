@@ -4,11 +4,12 @@ import torch.nn as nn
 import numpy as np
 import random
 import collections
+import matplotlib.pyplot as plt
 from utils.qnet import *
 
 class DDQN(nn.Module):
     def __init__(self, state_dim, action_n, hiden_dim, trajectory_count,
-                  steps_before_update=500, memory_size=5000, batch_size=128, gamma=0.95, epsilon = 0.99, lr=0.001, tau= 0.01):
+                  steps_before_update=500, memory_size=500000, batch_size=128, gamma=0.99, epsilon = 0.99, lr=0.001, tau= 0.01):
         super(DDQN, self).__init__()
         self.lr = lr
         self.tau = tau
@@ -24,8 +25,8 @@ class DDQN(nn.Module):
         self.counter = 0
         self.steps_before_update = steps_before_update
 
-        self.q_func = Qnet(state_dim, action_n, hiden_dim)
-        self.q_func_target = Qnet(state_dim, action_n, hiden_dim)
+        self.q_func = Qnet(state_dim, action_n, hiden_dim, 49)
+        self.q_func_target = Qnet(state_dim, action_n, hiden_dim, 49)
 
         self.optim = torch.optim.Adam(self.q_func.parameters(), lr=self.lr)
 
@@ -110,9 +111,9 @@ if __name__ == '__main__':
     action_n = env.action_space.n
     hiden_dim = 128
 
-    trajectory_count = 250
-    trajectory_len = 1000
-    agent = DDQN(state_dim, action_n, hiden_dim, trajectory_count)
+    trajectory_count = 1000
+    trajectory_len = 400
+    agent = DDQN(state_dim, action_n, hiden_dim, trajectory_count,lr=0.001, tau=0.1)
     rewards = []
     for i in range(trajectory_count+1):
 
@@ -140,19 +141,22 @@ if __name__ == '__main__':
 
     input()
 
-    env = gym.make("LunarLander-v2", render_mode="human")
-    state = env.reset()[0]
+    for i in range(8):
 
-    for i in range(5):
+        total_reward = 0
+        state = env.reset()[0]
+
         for _ in range(trajectory_len):
 
             action = agent.get_action(state)
             next_state, reward, done, _, _ = env.step(action)
 
+            total_reward+=reward
+
             agent.fit(state, action, reward, done, next_state)
             state = next_state
 
-            env.render()
-
             if done: 
                 break
+        
+        print(f"Trajectory №{i}: Reward: {total_reward}")

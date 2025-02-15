@@ -8,22 +8,17 @@ from utils.qnet import *
     
 
 class DQN():
-    def __init__(self, action_n, model, trajectory_count, memory_size = 10000, lr=0.001, epsilon=1, gamma = 0.95, batch_size=64):
+    def __init__(self, action_n, model, trajectory_count, memory_size = 10000, lr=1e-2, epsilon=1, gamma = 0.95, batch_size=64):
         self.model = model
         self.epsilon = epsilon
         self.gamma = gamma
         self.action_n = action_n
         self.batch_size = batch_size
+
         self.epsilon_decrease = 1/trajectory_count
         self.memory = collections.deque(maxlen=memory_size)
         self.optim = torch.optim.Adam(self.model.parameters(), lr)
 
-
-    def get_action_prob(self, q_values):
-        prob = np.ones(self.action_n) * self.epsilon / self.action_n
-        argmax_action = np.argmax(q_values)
-        prob[argmax_action] += 1 - self.epsilon
-        return prob
 
     def parse_batch(self, batch):
         states, actions, rewards, dones, next_states = [],[],[],[],[]
@@ -39,16 +34,13 @@ class DQN():
 
 
     def get_action(self, state):
-        #print(state)
-        temp = self.model(torch.from_numpy(state))
-        qvalues = temp.detach().numpy()
-        
-        prob = self.get_action_prob(qvalues)
-        #print(prob)
-        action = np.random.choice(np.arange(self.action_n), p=prob)
+        argmax_action = torch.argmax(self.model(torch.from_numpy(state)))
+        prob = np.ones(self.action_n) * self.epsilon / self.action_n
+        prob[argmax_action] += 1 - self.epsilon
 
+        actions = np.arange(self.action_n)        
+        action = np.random.choice(actions, p=prob)
         return action
-
 
 
     def fit(self, state, action, reward, done, next_state):
@@ -56,6 +48,8 @@ class DQN():
 
         if len(self.memory) < self.batch_size * 10:
             return
+        
+        self.memory.pop()
 
         batch = random.sample(self.memory, self.batch_size)
         states, actions, rewards, dones, next_states = self.parse_batch(batch)
@@ -66,27 +60,31 @@ class DQN():
         targets = qvalues.clone()
 
         for i in range(len(batch)):
-            targets[i][actions[i]] = rewards[i] + (1 - dones[i]) * self.gamma * torch.max(next_qvalues[i])
+            targets[i][actions[i]] = rewards[i] + (1 - dones[i]) * self.gamma * torch.argmax(next_qvalues[i])
 
         loss = torch.mean((targets.detach() - qvalues) ** 2)
+
         loss.backward()
         self.optim.step()
         self.optim.zero_grad()
 
-        self.epsilon = max(0, self.epsilon - self.epsilon_decrease)
+        if self.epsilon > 0.01:
+            self.epsilon *= 0.999
 
 
 if __name__ == '__main__':
 
+    env = gym.make('CartPole-v1')
+    env = gym.make('CartPole-v1', render_mode='human')
     #env = gym.make("LunarLander-v2", render_mode="human")
-    env = gym.make("LunarLander-v2")
+    #env = gym.make("LunarLander-v2")
 
     state_dim = env.observation_space.shape[0]
     action_n = env.action_space.n
 
     trajectory_count = 1000
     trajectory_len = 400
-    model = Qnet(state_dim, action_n, 128)
+    model = Qnet(state_dim, action_n, 128, 49)
     agent = DQN(action_n, model, trajectory_count)
     rewards = []
     for i in range(trajectory_count+1):
@@ -108,6 +106,7 @@ if __name__ == '__main__':
                 break
         
         rewards.append(total_reward)
+        print(f"Trajectory №{i}: Reward: {total_reward}")
 
         if i%100 == 0:
             print(f"Trajectory №{i}: Reward: {np.mean(rewards)}")
@@ -115,7 +114,7 @@ if __name__ == '__main__':
 
     
 
-    env = gym.make("LunarLander-v2", render_mode="human")
+    env = gym.make('CartPole-v1', render_mode="human")
     state = env.reset()[0]
     for _ in range(trajectory_len):
 
